@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<!-- viewport-fit=cover handles iPhone notch/safe areas.
+     user-scalable=no stops accidental pinch-zoom mid-jump. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, maximum-scale=1">
+
+<!-- Lets students "Add to Home Screen" and run it fullscreen. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Resilience Quest">
+<meta name="theme-color" content="#0b1026">
+<meta name="description" content="A first-year resilience side-scroller for college students.">
+
+<title>Resilience Quest — The Run</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --night:#0b1026; --night-deep:#060814; --card:#161c3a;
+    --lantern:#ffb347; --lantern-soft:#ffd68a;
+    --text:#eef0ff; --muted:#9aa0c7; --danger:#ff6b6b; --good:#5fd99a;
+    --tap:44px; /* Apple/WCAG minimum touch target */
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html,body{ overscroll-behavior:none; touch-action:manipulation; }
+  body{
+    margin:0;
+    min-height:100dvh;
+    font-family:'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background:var(--night-deep); color:var(--text);
+    display:flex; justify-content:center; align-items:flex-start;
+    padding:16px 12px calc(16px + env(safe-area-inset-bottom));
+    -webkit-user-select:none; user-select:none;
+  }
+  #app{ width:100%; max-width:760px; }
+  header{ text-align:center; margin-bottom:12px; }
+  h1{ font-size:clamp(1.15rem, 4.5vw, 1.7rem); font-weight:800; margin:0 0 2px; }
+  .tagline{ color:var(--muted); font-size:clamp(0.72rem, 2.6vw, 0.85rem); margin:0 0 8px; }
+
+  #gameWrap{
+    position:relative; width:100%;
+    aspect-ratio:16/9;
+    border-radius:16px; overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,0.5);
+    border:1px solid rgba(255,255,255,0.08);
+    background:var(--night);
+  }
+  @media (orientation:portrait){ #gameWrap{ aspect-ratio:1/1; } }
+  @media (orientation:landscape) and (max-height:520px){
+    body{ padding-top:8px; }
+    header{ margin-bottom:6px; }
+    .tagline, .controls-hint{ display:none; }
+    #gameWrap{ max-height:80dvh; }
+  }
+  canvas{ width:100%; height:100%; display:block; touch-action:none; }
+
+  .hud{
+    position:absolute; top:8px; left:8px; right:8px;
+    display:flex; justify-content:space-between; align-items:center;
+    gap:6px; font-size:clamp(0.6rem, 2.3vw, 0.75rem);
+    pointer-events:none; z-index:5;
+  }
+  .hud-pill{
+    background:rgba(6,8,20,0.68); border:1px solid rgba(255,255,255,0.15);
+    padding:4px 9px; border-radius:999px; backdrop-filter:blur(4px);
+    display:flex; align-items:center; gap:5px; white-space:nowrap;
+  }
+  /* meter-fill MUST be block — inline elements ignore width */
+  .meter-wrap{
+    width:clamp(44px, 14vw, 100px); height:9px;
+    background:rgba(255,255,255,0.15); border-radius:999px;
+    overflow:hidden; display:block; flex:none;
+  }
+  .meter-fill{
+    display:block; height:100%; width:0%;
+    background:linear-gradient(90deg,var(--lantern),var(--lantern-soft));
+    border-radius:999px;
+    transition:width .5s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
+  }
+  .meter-fill.flash{ box-shadow:0 0 12px 3px rgba(255,179,71,.9); }
+
+  #jumpBtn{
+    position:absolute; bottom:12px; right:12px; z-index:6;
+    min-width:var(--tap); min-height:var(--tap);
+    background:rgba(255,179,71,0.92); border:none; color:var(--night-deep);
+    font-weight:800; padding:12px 20px; border-radius:16px;
+    font-size:clamp(0.78rem, 3vw, 0.9rem); font-family:inherit;
+    cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.45);
+  }
+  #jumpBtn:active{ transform:scale(0.94); background:var(--lantern-soft); }
+
+  .overlay{
+    position:absolute; inset:0; z-index:10; background:rgba(6,8,20,0.93);
+    display:flex; align-items:center; justify-content:center; padding:14px;
+  }
+  .overlay[hidden]{ display:none; }
+  .panel{
+    background:var(--card); border-radius:16px; padding:clamp(14px, 4vw, 22px);
+    max-width:470px; width:100%; border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 10px 30px rgba(0,0,0,0.5);
+    max-height:100%; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  .round-label{ color:var(--lantern); font-weight:700; font-size:0.72rem; text-transform:uppercase; letter-spacing:1.2px; margin:0 0 8px; }
+  .scenario-text{ font-size:clamp(0.92rem, 3.4vw, 1.02rem); line-height:1.5; margin:0 0 14px; }
+  .choice-btn{
+    display:block; width:100%; min-height:var(--tap); text-align:left;
+    background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+    color:var(--text); padding:13px 14px; margin-bottom:9px; border-radius:12px;
+    font-family:inherit; font-size:clamp(0.85rem, 3.2vw, 0.9rem); line-height:1.4;
+    cursor:pointer; transition:background .18s, border-color .18s, transform .18s;
+  }
+  .choice-btn:hover,.choice-btn:focus-visible{ background:rgba(255,179,71,0.16); border-color:var(--lantern); outline:2px solid var(--lantern); outline-offset:2px; }
+  .choice-btn:active{ background:rgba(255,179,71,0.24); }
+  .consequence-text{ font-size:clamp(0.9rem, 3.3vw, 0.98rem); line-height:1.55; margin:0 0 12px; }
+  .skill-tag{ display:inline-block; padding:5px 12px; border-radius:999px; font-size:0.78rem; font-weight:700; margin-bottom:12px; }
+  .skill-tag.gained{ background:rgba(95,217,154,0.15); color:var(--good); border:1px solid var(--good); }
+  .skill-tag.missed{ background:rgba(255,107,107,0.15); color:var(--danger); border:1px solid var(--danger); }
+  .lantern-note{ font-size:0.78rem; color:var(--muted); margin:0 0 14px; }
+  .btn-primary{
+    min-height:var(--tap); background:var(--lantern); color:var(--night-deep);
+    border:none; padding:12px 24px; border-radius:999px; font-family:inherit;
+    font-weight:700; font-size:clamp(0.85rem, 3.2vw, 0.9rem); cursor:pointer;
+    transition:background .2s, transform .2s;
+  }
+  .btn-primary:hover{ background:var(--lantern-soft); }
+  .btn-primary:active{ transform:scale(0.96); }
+  .btn-primary:focus-visible{ outline:3px solid var(--lantern-soft); outline-offset:3px; }
+
+  .summary-list{ margin:12px 0; padding:0; list-style:none; }
+  .summary-list li{ padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.88rem; line-height:1.4; }
+  .summary-list li.good::before{ content:"✓ "; color:var(--good); font-weight:700; }
+  .summary-list li.bad::before{ content:"△ "; color:var(--danger); font-weight:700; }
+
+  .controls-hint{ text-align:center; color:var(--muted); font-size:0.75rem; margin:10px 0 0; }
+
+  #rotateTip{
+    position:absolute; bottom:12px; left:12px; z-index:7;
+    background:rgba(6,8,20,0.8); border:1px solid rgba(255,255,255,0.2);
+    color:var(--text); font-size:0.68rem; padding:7px 11px; border-radius:999px;
+    font-family:inherit; cursor:pointer; max-width:62%; text-align:left; line-height:1.3;
+  }
+  @media (orientation:landscape){ #rotateTip{ display:none; } }
+
+  .support-bar{
+    margin-top:14px; text-align:center; font-size:0.76rem; color:var(--muted); line-height:1.8;
+  }
+  .support-bar a{
+    color:var(--lantern-soft); text-decoration:underline;
+    display:inline-block; padding:5px 3px;
+  }
+  .support-bar .sep{ opacity:0.5; }
+
+  @media (prefers-reduced-motion: reduce){ *{ transition-duration:0.01ms !important; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🏮 Resilience Quest: The Run</h1>
+    <p class="tagline">Jump the bumps. Face the dilemmas. Keep your lantern lit.</p>
+  </header>
+
+  <div id="gameWrap">
+    <canvas id="game" aria-label="Resilience side-scrolling game. Tap the screen or press space to jump."></canvas>
+
+    <div class="hud" aria-hidden="true">
+      <div class="hud-pill">Round <span id="roundNum">0</span>/<span id="totalRounds">6</span></div>
+      <div class="hud-pill">
+        <span>Lantern</span>
+        <span class="meter-wrap"><span class="meter-fill" id="hudMeter"></span></span>
+        <span id="hudScore">0/6</span>
+      </div>
+      <div class="hud-pill">Stumbles <span id="stumbleCount">0</span></div>
+    </div>
+
+    <button id="jumpBtn" aria-label="Jump">JUMP ▲</button>
+    <button id="rotateTip">↻ Tip: turn your phone sideways for more room. Tap to hide.</button>
+
+    <div class="overlay" id="startOverlay">
+      <div class="panel">
+        <p class="round-label">Before You Begin</p>
+        <p class="scenario-text">Run through your first year. <strong>Tap anywhere on the screen</strong> (or press SPACE) to hop obstacles. At each glowing flag, the run pauses for a real first-year dilemma.</p>
+        <p class="lantern-note">Watch your lantern: it <strong>flares bright</strong> when you use a resilience skill, <strong>dims sharply</strong> when you miss one, and <strong>flickers low</strong> each time you stumble. Six scenarios are drawn from a pool of sixteen — every run is different.</p>
+        <button class="btn-primary" id="startBtn">Start the Run</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="scenarioOverlay" hidden>
+      <div class="panel">
+        <p class="round-label" id="scenarioLabel"></p>
+        <p class="scenario-text" id="scenarioText"></p>
+        <div id="choicesWrap"></div>
+      </div>
+    </div>
+
+    <div class="overlay" id="consequenceOverlay" hidden>
+      <div class="panel">
+        <p class="round-label">What Happened</p>
+        <p class="consequence-text" id="consequenceText"></p>
+        <span class="skill-tag" id="skillTag"></span>
+        <p class="lantern-note" id="lanternNote"></p>
+        <button class="btn-primary" id="continueBtn">Keep Running →</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="summaryOverlay" hidden>
+      <div class="panel">
+        <p class="round-label">Journey Complete</p>
+        <p class="scenario-text" id="summaryHeadline"></p>
+        <div class="meter-wrap" style="width:100%;height:14px;"><span class="meter-fill" id="finalMeter"></span></div>
+        <p id="scoreText" style="color:var(--muted); font-size:0.82rem; margin-top:8px;"></p>
+        <ul class="summary-list" id="summaryList"></ul>
+        <button class="btn-primary" id="restartBtn">Run Again (New Scenarios)</button>
+        <p class="lantern-note" style="margin-top:14px;">Screenshot this summary to bring to your reflection discussion.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="controls-hint">Tap the screen, press Space, or use the JUMP button</p>
+
+  <!-- ============ SUPPORT RESOURCES — Young Harris College ============
+       To change these later, edit the href="..." (where the link goes)
+       and the text between the tags (what students see).
+       Phone links use tel: followed by digits only.
+       ================================================================== -->
+  <div class="support-bar">
+    Struggling with something in this game for real? You don't have to handle it alone.<br>
+    <a href="https://www.yhc.edu/student-life/health-and-wellness/student-counseling-center/" target="_blank" rel="noopener">YHC Student Counseling Center</a>
+    <span class="sep">·</span>
+    <a href="tel:7063795057">Call (706) 379-5057</a>
+    <span class="sep">·</span>
+    <a href="tel:988">988 Suicide &amp; Crisis Lifeline</a>
+    <span class="sep">·</span>
+    <a href="sms:741741&body=HOME">Text HOME to 741741</a>
+  </div>
+  <!-- ================================================================== -->
+</div>
+
+<script>
+/* =========================================================
+   SCENARIO POOL — 16 scenarios, 6 drawn & shuffled per run.
+   No alcohol/substance content.
+   ========================================================= */
+const scenarioPool = [
+  { label:"Academic Setback", text:"You got a C- on your first Calculus exam — well below what you're used to.",
+    choices:[
+      {text:"Push it out of your mind and binge a show all night.", consequence:"A night of distraction, but the stress returns worse before the next exam.", skill:"Avoidance Coping", gained:false},
+      {text:"Email your professor and ask about office hours.", consequence:"Your professor flags two concept gaps and points you to tutoring. You leave with a real plan.", skill:"Help-Seeking Behavior", gained:true},
+      {text:"Decide you're 'just bad at math' and consider dropping the class.", consequence:"Doubt sets in and your motivation drops further.", skill:"Growth Mindset", gained:false}
+    ]},
+  { label:"Roommate Conflict", text:"Your roommate plays music loudly late at night before your 8am classes. Tension is building.",
+    choices:[
+      {text:"Say nothing and quietly fume.", consequence:"Resentment builds until you snap over something small.", skill:"Direct Communication", gained:false},
+      {text:"Suggest a calm roommate agreement conversation.", consequence:"Awkward at first, but you agree on quiet hours. Tension drops.", skill:"Constructive Communication", gained:true},
+      {text:"Ask your RA to step in immediately.", consequence:"The RA mediates, but your roommate feels blindsided.", skill:"Premature Escalation", gained:false}
+    ]},
+  { label:"Financial Stress", text:"Your laptop dies two days before a major project, and repairs cost more than you have.",
+    choices:[
+      {text:"Take out a high-interest 'quick cash' loan.", consequence:"You get cash fast but now owe nearly double with fees.", skill:"Financial Problem-Solving", gained:false},
+      {text:"Use the campus lab and email your professor about the situation.", consequence:"You finish on time, and your professor appreciates the heads-up.", skill:"Proactive Problem-Solving", gained:true},
+      {text:"Ignore the deadline and hope it works out.", consequence:"The project is late, and the grade hit stings.", skill:"Proactive Problem-Solving", gained:false}
+    ]},
+  { label:"Social Isolation", text:"Your hallmates make plans again without inviting you. You scroll their photos alone.",
+    choices:[
+      {text:"Decide nobody likes you and stop trying to make plans.", consequence:"Isolation deepens over the following weeks.", skill:"Cognitive Reappraisal", gained:false},
+      {text:"Reach out to one person and suggest your own hangout.", consequence:"It feels vulnerable, but it turns into a real friendship.", skill:"Social Initiative", gained:true},
+      {text:"Join a club unrelated to your floor.", consequence:"You meet people who share your actual interests.", skill:"Social Connection-Building", gained:true}
+    ]},
+  { label:"Finals Overload", text:"Three finals, two papers, and a work shift — all in four days. You haven't started.",
+    choices:[
+      {text:"Pull an all-nighter and cram everything at once.", consequence:"You're foggy for your first exam and underperform.", skill:"Planning & Stress Tolerance", gained:false},
+      {text:"Build a prioritized schedule and ask your manager to move your shift.", consequence:"You're tired but functional, and you hit every deadline.", skill:"Planning & Self-Advocacy", gained:true},
+      {text:"Shut down and tell yourself it's hopeless.", consequence:"You miss a deadline entirely. The panic is worse than the work was.", skill:"Stress Tolerance", gained:false}
+    ]},
+  { label:"Homesickness", text:"It's week three and all you want is to be back home. Everything here still feels unfamiliar.",
+    choices:[
+      {text:"Call home every night and skip campus events.", consequence:"Comfort now, but you fall further behind on building a life here.", skill:"Avoidance Coping", gained:false},
+      {text:"Set regular weekly calls home AND sign up for one campus event.", consequence:"You keep your support line and slowly build new connections.", skill:"Balanced Coping", gained:true},
+      {text:"Push the feelings down and pretend you're fine.", consequence:"The homesickness resurfaces harder during a stressful week later.", skill:"Emotional Awareness", gained:false}
+    ]},
+  { label:"Imposter Syndrome", text:"In your honors seminar, everyone seems smarter than you. You're afraid to speak up.",
+    choices:[
+      {text:"Stay silent all semester to avoid looking uninformed.", consequence:"You disengage, and your participation grade suffers.", skill:"Self-Advocacy", gained:false},
+      {text:"Ask the 'basic' question anyway — others probably wonder too.", consequence:"Two classmates thank you afterward for asking exactly that.", skill:"Vulnerability as Strength", gained:true},
+      {text:"Consider dropping the honors track entirely.", consequence:"You dodge the discomfort but lose an opportunity that would have grown you.", skill:"Growth Mindset", gained:false}
+    ]},
+  { label:"Group Project Conflict", text:"One teammate isn't doing their share, and the deadline is in two days.",
+    choices:[
+      {text:"Quietly do their part yourself to avoid conflict.", consequence:"It gets done, but resentment builds and the pattern repeats.", skill:"Boundary-Setting", gained:false},
+      {text:"Call a group meeting to redistribute tasks fairly.", consequence:"It's uncomfortable, but the workload evens out and the project improves.", skill:"Conflict Resolution", gained:true},
+      {text:"Report them to the professor without talking to them first.", consequence:"The professor asks why the group never addressed it directly.", skill:"Premature Escalation", gained:false}
+    ]},
+  { label:"Presentation Anxiety", text:"You present in class tomorrow and your hands shake just thinking about it.",
+    choices:[
+      {text:"Email the professor asking to submit something written instead.", consequence:"You avoid the fear short-term but miss the chance to build the skill.", skill:"Avoidance Coping", gained:false},
+      {text:"Rehearse out loud three times and visit the speaking center.", consequence:"Still nervous, but noticeably more prepared and composed.", skill:"Preparation & Stress Tolerance", gained:true},
+      {text:"Skip practice and hope adrenaline carries you.", consequence:"You freeze halfway through and lose your train of thought.", skill:"Preparation", gained:false}
+    ]},
+  { label:"Family Pressure", text:"Your family keeps pushing a major you're not passionate about, and it's weighing on you.",
+    choices:[
+      {text:"Agree with them to avoid conflict, ignoring your own interests.", consequence:"You feel disconnected from your coursework all semester.", skill:"Self-Advocacy", gained:false},
+      {text:"Have an honest conversation about your interests and concerns.", consequence:"Tense at first, but they begin to understand your perspective.", skill:"Assertive Communication", gained:true},
+      {text:"Dodge the topic every time it comes up.", consequence:"The tension resurfaces every holiday, unresolved.", skill:"Direct Communication", gained:false}
+    ]},
+  { label:"Sleep & Health", text:"You've run on four hours of sleep all week trying to keep up with everything.",
+    choices:[
+      {text:"Add more caffeine and push through.", consequence:"You crash mid-week and get sick right before an exam.", skill:"Self-Care", gained:false},
+      {text:"Cut one low-priority commitment and protect seven hours of sleep.", consequence:"Your focus and mood improve noticeably within days.", skill:"Self-Care & Prioritization", gained:true},
+      {text:"Tell yourself you'll 'catch up on sleep later.'", consequence:"The sleep debt keeps compounding through the semester.", skill:"Self-Care", gained:false}
+    ]},
+  { label:"Peer Pressure", text:"Your friends are pressuring you to ditch your study group the night before a midterm to go to an all-night event.",
+    choices:[
+      {text:"Go along with it so you don't seem like the uptight one.", consequence:"You're exhausted and underprepared for the midterm, and you resent the pressure afterward.", skill:"Boundary-Setting", gained:false},
+      {text:"Decline clearly and offer to celebrate with them after the exam.", consequence:"A couple of friends shrug it off, and one says they're going to study too. The boundary held.", skill:"Assertive Boundary-Setting", gained:true},
+      {text:"Say nothing, don't show up, and ignore their texts.", consequence:"You avoid the pressure but strain the friendship and miss practice saying no directly.", skill:"Direct Communication", gained:false}
+    ]},
+  { label:"Technology Distraction", text:"You've opened your textbook three times tonight but keep sliding back to your phone.",
+    choices:[
+      {text:"Keep trying to multitask between the phone and the reading.", consequence:"Two hours pass and you've retained almost nothing.", skill:"Self-Regulation", gained:false},
+      {text:"Put your phone in another room and set a 25-minute focus timer.", consequence:"You finish the chapter in half the time with real focus.", skill:"Self-Regulation", gained:true},
+      {text:"Give up on studying tonight entirely.", consequence:"The reading piles up, adding stress before the next class.", skill:"Self-Regulation", gained:false}
+    ]},
+  { label:"Heartbreak", text:"Your long-distance relationship just ended, and you can't focus on anything else.",
+    choices:[
+      {text:"Isolate completely and skip classes for a week.", consequence:"You fall behind academically on top of the emotional pain.", skill:"Emotional Regulation", gained:false},
+      {text:"Talk to a friend and make an appointment at the counseling center.", consequence:"You process the loss with support instead of carrying it alone.", skill:"Help-Seeking Behavior", gained:true},
+      {text:"Fill every single night with plans so you're never alone with it.", consequence:"The feelings resurface anyway, now paired with exhaustion.", skill:"Emotional Regulation", gained:false}
+    ]},
+  { label:"Financial Aid Deadline", text:"You missed a financial aid paperwork deadline and your aid is now at risk.",
+    choices:[
+      {text:"Assume it's hopeless and avoid the financial aid office.", consequence:"More deadlines pass and your options narrow.", skill:"Proactive Problem-Solving", gained:false},
+      {text:"Go to the financial aid office in person and explain the situation.", consequence:"They help you file a late appeal and you keep most of your aid.", skill:"Self-Advocacy", gained:true},
+      {text:"Vent about it online instead of addressing it directly.", consequence:"You get sympathy, but the actual problem is still there.", skill:"Proactive Problem-Solving", gained:false}
+    ]},
+  { label:"Overcommitment", text:"You joined five clubs plus a part-time job, and nothing is getting your full attention.",
+    choices:[
+      {text:"Keep everything and just sleep less.", consequence:"Burnout hits hard by week ten.", skill:"Prioritization", gained:false},
+      {text:"Step back from two commitments to focus on what matters most.", consequence:"You do better in what you kept and feel far less frantic.", skill:"Prioritization", gained:true},
+      {text:"Quietly let things slide without telling anyone.", consequence:"Club leaders and your manager are frustrated by the inconsistency.", skill:"Direct Communication", gained:false}
+    ]}
+];
+
+/* ================= STATE ================= */
+const TOTAL_ROUNDS = 6;
+let runScenarios = [], roundIndex = 0, resilienceScore = 0, history = [], stumbles = 0;
+
+let lanternPulse = 0, displayGlow = 14;
+const GLOW_MIN = 3, GLOW_MAX = 85;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, S = 1;
+
+const groundYRatio = 0.78;
+let player = null, obstacles = [], flag = null, stars = [], hills = [];
+let scrollSpeed = 220, gravity = 1600, jumpVel = -620;
+let paused = true, gameOver = false, timeSinceResume = 0, flagSpawnTime = 0, obstacleTimer = 0;
+let lastTime = 0, animClock = 0;
+
+/* High-DPI (retina) rendering so edges stay crisp on phones/tablets */
+function resize(){
+  const rect = canvas.parentElement.getBoundingClientRect();
+  if(rect.width === 0 || rect.height === 0) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width  = Math.round(rect.width  * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = rect.width; H = rect.height;
+  recalcMetrics();
+}
+
+/* Scale physics + entity sizes to the viewport */
+function recalcMetrics(){
+  S = H / 400;
+  scrollSpeed = Math.max(140, W * 0.32);
+  gravity  = H * 4.1;
+  jumpVel  = -H * 1.57;
+
+  if(player){
+    player.w = Math.max(20, 34*S);
+    player.h = Math.max(24, 40*S);
+    player.x = W * 0.18;
+    const groundY = H * groundYRatio;
+    if(player.grounded) player.y = groundY - player.h;
+  }
+  obstacles.forEach(o=>{
+    o.w = Math.max(16, 26*S); o.h = Math.max(16, 26*S);
+    o.y = H*groundYRatio - o.h;
+  });
+  if(flag){ flag.h = 70*S; flag.y = H*groundYRatio - flag.h; }
+}
+
+let resizeTimer;
+function onViewportChange(){
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resize, 120);
+}
+window.addEventListener('resize', onViewportChange);
+window.addEventListener('orientationchange', onViewportChange);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange);
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+function initRun(){
+  runScenarios = shuffle(scenarioPool).slice(0, TOTAL_ROUNDS);
+  roundIndex = 0; resilienceScore = 0; history = []; stumbles = 0;
+  lanternPulse = 0; displayGlow = 14;
+  document.getElementById('roundNum').textContent = 0;
+  document.getElementById('totalRounds').textContent = TOTAL_ROUNDS;
+  document.getElementById('stumbleCount').textContent = 0;
+  updateHudMeter();
+  resetWorld();
+}
+
+function resetWorld(){
+  resize();
+  const groundY = H*groundYRatio;
+  player = { x: W*0.18, y: groundY - 40*S, w: 34*S, h: 40*S, vy:0, grounded:true };
+  obstacles = []; flag = null;
+  timeSinceResume = 0;
+  flagSpawnTime = 3 + Math.random()*2;
+  obstacleTimer = 1.2 + Math.random()*1.3;
+  stars = [];
+  for(let i=0;i<45;i++) stars.push({x:Math.random()*W, y:Math.random()*H*0.6, r:Math.random()*1.5+0.5, tw:Math.random()*Math.PI*2});
+  hills = [];
+  for(let i=0;i<4;i++) hills.push({x:i*(W/2), w:W/1.5+50});
+  recalcMetrics();
+}
+
+function updateHudMeter(flash){
+  const pct = Math.round((resilienceScore/TOTAL_ROUNDS)*100);
+  const bar = document.getElementById('hudMeter');
+  bar.style.width = pct + '%';
+  document.getElementById('hudScore').textContent = resilienceScore + '/' + TOTAL_ROUNDS;
+  if(flash){ bar.classList.add('flash'); setTimeout(()=> bar.classList.remove('flash'), 600); }
+}
+
+/* ================= INPUT ================= */
+function doJump(){
+  if(paused || gameOver || !player) return;
+  if(player.grounded){ player.vy = jumpVel; player.grounded = false; }
+}
+canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); doJump(); });
+document.getElementById('jumpBtn').addEventListener('pointerdown', e=>{ e.preventDefault(); doJump(); });
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); doJump(); }
+});
+document.addEventListener('gesturestart', e=> e.preventDefault());
+document.getElementById('rotateTip').addEventListener('click', function(){ this.style.display='none'; });
+
+/* ================= LOOP ================= */
+function loop(ts){
+  if(!lastTime) lastTime = ts;
+  const dt = Math.min((ts-lastTime)/1000, 0.05);
+  lastTime = ts;
+  animClock += dt;
+  if(!paused && !gameOver) update(dt);
+  updateLantern(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) lastTime = 0; });
+
+function updateLantern(dt){
+  lanternPulse += (0 - lanternPulse) * Math.min(1, dt*1.1);
+  if(Math.abs(lanternPulse) < 0.2) lanternPulse = 0;
+  const base = 10 + (resilienceScore/TOTAL_ROUNDS)*45 - Math.min(stumbles*4, 16);
+  const target = Math.max(GLOW_MIN, Math.min(GLOW_MAX, base + lanternPulse));
+  displayGlow += (target - displayGlow) * Math.min(1, dt*4);
+}
+
+function update(dt){
+  timeSinceResume += dt;
+  const groundY = H*groundYRatio;
+
+  player.vy += gravity*dt;
+  player.y  += player.vy*dt;
+  if(player.y + player.h >= groundY){ player.y = groundY - player.h; player.vy = 0; player.grounded = true; }
+
+  obstacleTimer -= dt;
+  if(obstacleTimer <= 0){
+    const sz = Math.max(16, 26*S);
+    obstacles.push({ x:W+20, y:groundY-sz, w:sz, h:sz, hit:false });
+    obstacleTimer = 1.3 + Math.random()*1.4;
+  }
+  obstacles.forEach(o=> o.x -= scrollSpeed*dt);
+  obstacles = obstacles.filter(o=> o.x+o.w > -10);
+
+  obstacles.forEach(o=>{
+    if(!o.hit && rectsOverlap(player,o)){
+      o.hit = true; stumbles++;
+      document.getElementById('stumbleCount').textContent = stumbles;
+      lanternPulse = Math.max(-40, lanternPulse - 26);
+      if(navigator.vibrate) navigator.vibrate(35);
+    }
+  });
+
+  if(!flag && timeSinceResume >= flagSpawnTime){
+    flag = { x:W+20, y:groundY-70*S, w:14*S, h:70*S };
+  }
+  if(flag){
+    flag.x -= scrollSpeed*dt;
+    if(flag.x <= player.x+player.w) triggerCheckpoint();
+  }
+
+  hills.forEach(h=>{ h.x -= scrollSpeed*0.3*dt; if(h.x+h.w<0) h.x += hills.length*h.w; });
+  stars.forEach(s=> s.tw += dt*2);
+}
+
+function rectsOverlap(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
+
+function triggerCheckpoint(){
+  paused = true; flag = null;
+  const s = runScenarios[roundIndex];
+  document.getElementById('roundNum').textContent = roundIndex+1;
+  document.getElementById('scenarioLabel').textContent = 'Round ' + (roundIndex+1) + ' · ' + s.label;
+  document.getElementById('scenarioText').textContent = s.text;
+  const wrap = document.getElementById('choicesWrap');
+  wrap.innerHTML = '';
+  s.choices.forEach(choice=>{
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = choice.text;
+    btn.onclick = ()=> resolveChoice(choice);
+    wrap.appendChild(btn);
+  });
+  show('scenarioOverlay');
+  wrap.querySelector('.choice-btn').focus();
+}
+
+function resolveChoice(choice){
+  if(choice.gained){ resilienceScore++; lanternPulse = 40; }
+  else { lanternPulse = -34; }
+  history.push({ label: runScenarios[roundIndex].label, skill: choice.skill, gained: choice.gained });
+  updateHudMeter(choice.gained);
+
+  document.getElementById('consequenceText').textContent = choice.consequence;
+  const tag = document.getElementById('skillTag');
+  tag.textContent = (choice.gained? '✓ Skill Used: ' : '△ Skill Missed: ') + choice.skill;
+  tag.className = 'skill-tag ' + (choice.gained?'gained':'missed');
+  document.getElementById('lanternNote').textContent = choice.gained
+    ? '🔆 Your lantern flares brighter — watch it when the run resumes.'
+    : '🕯️ Your lantern dims — the path ahead gets harder to see.';
+
+  hide('scenarioOverlay');
+  show('consequenceOverlay');
+  document.getElementById('continueBtn').focus();
+}
+
+document.getElementById('continueBtn').onclick = ()=>{
+  hide('consequenceOverlay');
+  roundIndex++;
+  if(roundIndex >= TOTAL_ROUNDS){ endRun(); }
+  else { timeSinceResume = 0; flagSpawnTime = 3.5 + Math.random()*2.5; paused = false; }
+};
+
+function endRun(){
+  gameOver = true;
+  const pct = Math.round((resilienceScore/TOTAL_ROUNDS)*100);
+  document.getElementById('finalMeter').style.width = pct+'%';
+  document.getElementById('scoreText').textContent =
+    'Resilience Score: ' + resilienceScore + '/' + TOTAL_ROUNDS + ' · Stumbles you got back up from: ' + stumbles;
+
+  let headline;
+  if(resilienceScore >= 5) headline = "Your lantern burns bright. You leaned on real resilience skills through most of this run.";
+  else if(resilienceScore >= 3) headline = "Your lantern flickers but holds. Some strong moments, some worth revisiting.";
+  else headline = "The path was dark this run — and that's okay. Resilience is built, not born. Run it again.";
+  document.getElementById('summaryHeadline').textContent = headline;
+
+  const list = document.getElementById('summaryList');
+  list.innerHTML = '';
+  history.forEach(h=>{
+    const li = document.createElement('li');
+    li.className = h.gained?'good':'bad';
+    li.textContent = h.label + ': ' + h.skill;
+    list.appendChild(li);
+  });
+  show('summaryOverlay');
+  document.getElementById('restartBtn').focus();
+}
+
+document.getElementById('restartBtn').onclick = ()=>{ hide('summaryOverlay'); gameOver=false; initRun(); paused=false; };
+document.getElementById('startBtn').onclick   = ()=>{ hide('startOverlay'); initRun(); paused=false; };
+function show(id){ document.getElementById(id).hidden = false; }
+function hide(id){ document.getElementById(id).hidden = true; }
+
+/* ================= RENDER ================= */
+function render(){
+  if(!W || !H) return;
+  ctx.clearRect(0,0,W,H);
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#0b1026'); grad.addColorStop(1,'#1a1f44');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+
+  stars.forEach(s=>{
+    const alpha = 0.45+0.5*Math.sin(s.tw);
+    ctx.fillStyle = 'rgba(255,255,255,'+alpha+')';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  });
+
+  const groundY = H*groundYRatio;
+  ctx.fillStyle = '#10163a';
+  hills.forEach(h=>{
+    ctx.beginPath();
+    ctx.moveTo(h.x, groundY);
+    ctx.quadraticCurveTo(h.x+h.w/2, groundY-70*S, h.x+h.w, groundY);
+    ctx.closePath(); ctx.fill();
+  });
+
+  ctx.fillStyle = '#060814'; ctx.fillRect(0, groundY, W, H-groundY);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+
+  if(player){
+    const poolR = (40 + displayGlow*1.9) * S;
+    const pg = ctx.createRadialGradient(player.x+player.w/2, groundY, 2, player.x+player.w/2, groundY, poolR);
+    pg.addColorStop(0, 'rgba(255,179,71,'+Math.min(0.30, displayGlow/180)+')');
+    pg.addColorStop(1, 'rgba(255,179,71,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(player.x+player.w/2, groundY, poolR, Math.PI, 0); ctx.fill();
+  }
+
+  obstacles.forEach(o=>{
+    ctx.fillStyle = o.hit ? '#5a3a3a' : '#3a2f52';
+    ctx.beginPath();
+    ctx.moveTo(o.x, o.y+o.h); ctx.lineTo(o.x+o.w/2, o.y); ctx.lineTo(o.x+o.w, o.y+o.h);
+    ctx.closePath(); ctx.fill();
+  });
+
+  if(flag){
+    ctx.strokeStyle = '#cfd4ff'; ctx.lineWidth = 3*S;
+    ctx.beginPath(); ctx.moveTo(flag.x, flag.y+flag.h); ctx.lineTo(flag.x, flag.y); ctx.stroke();
+    ctx.save();
+    ctx.shadowColor='rgba(255,179,71,0.9)'; ctx.shadowBlur=18;
+    ctx.fillStyle='rgba(255,179,71,0.95)';
+    ctx.beginPath(); ctx.moveTo(flag.x, flag.y); ctx.lineTo(flag.x+20*S, flag.y+9*S); ctx.lineTo(flag.x, flag.y+18*S); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  if(player){
+    const flicker = 1 + Math.sin(animClock*9)*0.06;
+    const lx = player.x+player.w/2, ly = player.y - 12*S;
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,179,71,0.95)';
+    ctx.shadowBlur = displayGlow*flicker;
+    ctx.globalAlpha = Math.max(0.35, Math.min(1, 0.35 + displayGlow/60));
+    ctx.fillStyle = displayGlow < 12 ? '#8a6a3a' : '#ffd68a';
+    ctx.beginPath(); ctx.arc(lx, ly, (5 + displayGlow*0.08)*S, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = '#eef0ff';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    const bob = (!paused && player.grounded) ? Math.sin(animClock*14)*4*S : 0;
+    ctx.fillStyle = '#9aa0c7';
+    ctx.fillRect(player.x+4*S, player.y+player.h, 6*S, 6*S+bob*0.3);
+    ctx.fillRect(player.x+player.w-10*S, player.y+player.h, 6*S, 6*S-bob*0.3);
+  }
+}
+
+/* ================= INIT ================= */
+window.addEventListener('load', resize);
+resize();
+initRun();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
